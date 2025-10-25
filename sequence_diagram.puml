@@ -1,0 +1,48 @@
+@startuml
+title sequence diagram
+
+participant "MPU6050 (gyroscope + accelerometer)" as mpu
+participant "ESP32" as esp
+participant "Red LED" as rled
+participant "Green LED" as gled
+participant "Blue LED" as bled
+participant "SOS Button" as sos
+participant "Cancel Button" as cncl
+participant "Buzzer" as buzzer
+
+ == Fall detection ==
+mpu -> esp: Fall detected
+esp -> bled: Blink (1 Hz)
+esp -> buzzer: Buzz (1 Hz)
+esp -> esp: Start countdown
+
+== SOS button pressed ==
+sos -> esp: Emergency detected
+esp -> bled: Blink (1 Hz)
+esp -> buzzer: Buzz (1 Hz)
+esp -> esp: Start countdown
+
+== Waiting for user action ==
+alt CANCEL button pressed before countdown end
+    cncl -> esp: Alarm cancelled
+    esp -> buzzer: Turn OFF
+    esp -> bled: Turn OFF
+    esp -> esp: Countdown cancelled
+
+else No cancel before timeout
+    esp -> esp: Send SOS message
+    esp -> bled: Blink (2 Hz)
+    esp -> buzzer: Buzz (2 Hz)
+end
+
+== Battery low ==
+esp -> rled: Blink (0.25 Hz)
+esp -> buzzer: Buzz (0.25 Hz)
+
+== Charging ==
+alt Battery under 85% capacity
+    esp -> rled: Turn ON
+else Battery over 85% capacity
+    esp -> gled: Turn ON
+end
+@enduml
