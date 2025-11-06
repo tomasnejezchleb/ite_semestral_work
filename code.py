@@ -1,4 +1,4 @@
-from machine import Pin, I2C, PWM, ADC
+from machine import Pin, I2C, PWM, ADC 
 from time import sleep, ticks_ms, ticks_diff
 import network
 import urequests
@@ -7,30 +7,30 @@ import mpu6050
 # ==============================
 # KONFIGURACE
 # ==============================
-SSID = "TvojeWiFi"
+SSID = "TvojeWiFi"  # lokální wifi, ke které se připojuje zařízení
 PASSWORD = "TvojeHeslo"
-NTFY_TOPIC = "fall_alert_12345"
-NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
+NTFY_TOPIC = "fall_alert_12345"  # téma odesílaného oznámení
+NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"  # adresa/cloud, kam je oznámení odesíláno
 
 # Práhy a časování
-FALL_ACCEL_THRESHOLD = 2.5    # g síla pro detekci pádu
+FALL_ACCEL_THRESHOLD = 5    # g síla pro detekci pádu-dle rešerše to bude klidně třeba 5g
 FALL_GYRO_THRESHOLD = 250     # deg/s (výrazná rotace)
-COUNTDOWN_MS = 5000           # čas na stisk tlačítka Cancel
+COUNTDOWN_MS = 10000           # čas na stisk tlačítka Cancel v milisekundách
 BATTERY_THRESHOLD = 85        # hranice pro „nabitá baterie“
 
 # ==============================
-# HARDWARE
+# HARDWARE upravit piny dle reálného zapojení!!!
 # ==============================
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
-mpu = mpu6050.accel(i2c)
+mpu = mpu6050.accel(i2c)    # vytvoření instance MPU6050 pro komunikaci přes I2C
 
-rled = Pin(15, Pin.OUT)  # červená
+rled = Pin(15, Pin.OUT)  # červená,
 gled = Pin(2, Pin.OUT)   # zelená
 bled = Pin(4, Pin.OUT)   # modrá
-buzzer = PWM(Pin(5))
-buzzer.duty(0)
+buzzer = PWM(Pin(5))    # PWM-pulse width modulation-umožňuje neposílat stálé napětí, ale jen pulzy->buď pulzace bzučáku, nebo jen snížení spotřeby za cenu nižší intenzity (záleží na frekvenci)
+buzzer.duty(0)  # bzučák začíná na nule-tzn je vypnutý
 
-sos_btn = Pin(12, Pin.IN, Pin.PULL_UP)
+sos_btn = Pin(12, Pin.IN, Pin.PULL_UP)  # tlačítko nestisknuté->pin HIGH (=log 0), stisk-spojení s GND->pin LOW
 cancel_btn = Pin(13, Pin.IN, Pin.PULL_UP)
 
 # simulace baterie a nabíjení (v praxi: ADC na pinu např. 34)
@@ -42,47 +42,46 @@ CHARGING = False  # defaultně
 # FUNKCE PRO SÍTĚ A NOTIFIKACE
 # ==============================
 def connect_wifi():
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
+    wlan = network.WLAN(network.STA_IF)  # vytvoření objektu pro správu wifi. STA_IF station interface=režim stanice=zařízení je klientem domácí wifi
+    wlan.active(True)   # aktivace wifi
     if not wlan.isconnected():
         print("📡 Připojuji se k Wi-Fi...")
         wlan.connect(SSID, PASSWORD)
         while not wlan.isconnected():
-            sleep(0.5)
-    print("✅ Wi-Fi připojena:", wlan.ifconfig())
+            sleep(0.5)  # hodnota času sleep [s] bude nastavena dle možností procesoru- aby se nepřetížil
+    print("✅ Wi-Fi připojena:", wlan.ifconfig())  # vypsání informací o síti
 
 def send_ntfy(title, message):
     """Odešle notifikaci na ntfy.cloud"""
     try:
         headers = {"Title": title}
-        response = urequests.post(NTFY_URL, data=message, headers=headers)
-        response.close()
+        response = urequests.post(NTFY_URL, data=message, headers=headers)  # odeslání požadavku na adresu url cloudové služby
+        response.close()    # zavře http spojení
         print("📨 Notifikace odeslána na ntfy")
     except Exception as e:
         print("⚠️ Chyba při odesílání ntfy:", e)
 
 # ==============================
-# FUNKCE PRO LED A ZVUK
+# FUNKCE PRO LED A ZVUK (neblokující verze)
 # ==============================
-def blink(pin, freq_hz, duration_s):
-    """Blikání LED nebo bzučáku (blokující)"""
+def nonblocking_blink(pin, freq_hz, last_toggle):
+    """Přepíná LED neblokujícím způsobem"""
     period = 1 / freq_hz
-    end_time = ticks_ms() + int(duration_s * 1000)
-    while ticks_diff(end_time, ticks_ms()) > 0:
-        pin.value(1)
-        sleep(period / 2)
-        pin.value(0)
-        sleep(period / 2)
+    if ticks_diff(ticks_ms(), last_toggle) >= period * 1000 / 2:
+        pin.value(1 - pin.value())
+        return ticks_ms()
+    return last_toggle
 
-def buzz(freq_hz, duration_s):
-    """Bzučák s danou frekvencí blikání"""
+def nonblocking_buzz(freq_hz, last_toggle):
+    """Pípání bzučáku neblokujícím způsobem"""
     period = 1 / freq_hz
-    end_time = ticks_ms() + int(duration_s * 1000)
-    while ticks_diff(end_time, ticks_ms()) > 0:
-        buzzer.duty(512)
-        sleep(period / 2)
-        buzzer.duty(0)
-        sleep(period / 2)
+    if ticks_diff(ticks_ms(), last_toggle) >= period * 1000 / 2:
+        if buzzer.duty() == 0:
+            buzzer.duty(512)
+        else:
+            buzzer.duty(0)
+        return ticks_ms()
+    return last_toggle
 
 def stop_alerts():
     buzzer.duty(0)
@@ -91,8 +90,6 @@ def stop_alerts():
 def send_sos():
     print("📡 SOS signal odeslán!")
     send_ntfy("🚨 SOS Alert", "Detekován pád nebo nouzová situace!")
-    blink(bled, 2, 5)
-    buzz(2, 5)
 
 # ==============================
 # DETEKCE PÁDU (akcelerometr + gyroskop)
@@ -118,17 +115,6 @@ def detect_fall():
     return False
 
 # ==============================
-# NEBLOKUJÍCÍ BLINK FUNKCE
-# ==============================
-def nonblocking_blink(pin, freq_hz, last_toggle):
-    """Přepíná LED neblokujícím způsobem"""
-    period = 1 / freq_hz
-    if ticks_diff(ticks_ms(), last_toggle) >= period * 1000 / 2:
-        pin.value(1 - pin.value())
-        return ticks_ms()
-    return last_toggle
-
-# ==============================
 # HLAVNÍ PROGRAM
 # ==============================
 def main():
@@ -136,6 +122,10 @@ def main():
 
     connect_wifi()
     gled_last_toggle = ticks_ms()
+    bled_last_toggle = 0
+    buzz_last_toggle = 0
+    alarm_active = False
+    alarm_start_time = 0
 
     print("Systém spuštěn.")
 
@@ -156,19 +146,32 @@ def main():
                 gled_last_toggle = nonblocking_blink(gled, 0.5, gled_last_toggle)
 
         # --- Detekce pádu nebo SOS ---
-        if detect_fall() or sos_btn.value() == 0:
-            print("🆘 Pád nebo SOS detekován")
-            start_time = ticks_ms()
-            while ticks_diff(ticks_ms(), start_time) < COUNTDOWN_MS:
-                blink(bled, 1, 1)
-                buzz(1, 1)
-                if cancel_btn.value() == 0:
-                    print("❌ Alarm zrušen")
-                    stop_alerts()
-                    break
-            else:
+        if not alarm_active and (detect_fall() or sos_btn.value() == 0):
+            print("🆘 Pád nebo SOS detekován, spouštím alarm")
+            alarm_active = True
+            alarm_start_time = ticks_ms()
+
+        if alarm_active:
+            # Během alarmu blikání a pípání neblokujícím způsobem
+            bled_last_toggle = nonblocking_blink(bled, 1, bled_last_toggle)
+            buzz_last_toggle = nonblocking_buzz(1, buzz_last_toggle)
+
+            # Kontrola, jestli už neuplynul čas pro zrušení alarmu
+            if ticks_diff(ticks_ms(), alarm_start_time) > COUNTDOWN_MS:
                 send_sos()
                 stop_alerts()
+                alarm_active = False
+
+            # Pokud uživatel stiskne cancel, zruší alarm
+            if cancel_btn.value() == 0:
+                print("❌ Alarm zrušen uživatelem")
+                stop_alerts()
+                alarm_active = False
+
+        else:
+            # Když není alarm, LED modrá vypnutá
+            bled.off()
+            buzzer.duty(0)
 
         sleep(0.1)
 
