@@ -1,0 +1,59 @@
+from machine import Pin, I2C
+import time
+
+# Inicializace I2C sběrnice (GPIO21=SDA, GPIO22=SCL)
+i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=100000)
+
+MPU_ADDR = 0x68  # Adresa MPU6050 s AD0 na GND
+
+# Probudit MPU6050 (nastavit registr PWR_MGMT_1 na 0)
+i2c.writeto_mem(MPU_ADDR, 0x6B, b'\x00')
+
+def read_word(reg):
+    # Čte 2 bajty z registru a vrací signed 16bit hodnotu
+    high = i2c.readfrom_mem(MPU_ADDR, reg, 1)[0]
+    low = i2c.readfrom_mem(MPU_ADDR, reg + 1, 1)[0]
+    val = (high << 8) | low
+    if val >= 0x8000:
+        val = -((65535 - val) + 1)
+    return val
+
+def get_accel():
+    ax = read_word(0x3B)
+    ay = read_word(0x3D)
+    az = read_word(0x3F)
+    return ax, ay, az
+
+def get_gyro():
+    gx = read_word(0x43)
+    gy = read_word(0x45)
+    gz = read_word(0x47)
+    return gx, gy, gz
+
+while True:
+    ax, ay, az = get_accel()
+    gx, gy, gz = get_gyro()
+    print(f"Accel: x={ax}, y={ay}, z={az} | Gyro: x={gx}, y={gy}, z={gz}")
+    time.sleep(0.5)
+
+
+#výstup:
+
+Accel: x=-768, y=196, z=17848 | Gyro: x=-415, y=260, z=-184
+Accel: x=-288, y=212, z=18020 | Gyro: x=-419, y=240, z=-182
+Accel: x=-484, y=208, z=17760 | Gyro: x=-439, y=262, z=-193
+Accel: x=-488, y=76, z=17740 | Gyro: x=-404, y=287, z=-194
+Accel: x=-284, y=44, z=17676 | Gyro: x=-467, y=17, z=-203
+Accel: x=-460, y=172, z=17684 | Gyro: x=-439, y=282, z=-189
+Accel: x=-472, y=196, z=18080 | Gyro: x=-441, y=271, z=-176
+Accel: x=-568, y=52, z=17796 | Gyro: x=-449, y=275, z=-199
+Accel: x=-428, y=124, z=17948 | Gyro: x=-401, y=499, z=-204
+Accel: x=-440, y=108, z=17800 | Gyro: x=-435, y=4, z=-178
+Accel: x=-496, y=120, z=17868 | Gyro: x=-419, y=275, z=-179
+Accel: x=-464, y=4, z=17760 | Gyro: x=-432, y=234, z=-212
+Accel: x=-440, y=152, z=17916 | Gyro: x=-422, y=502, z=-194
+Accel: x=-540, y=80, z=17744 | Gyro: x=-453, y=270, z=-166
+Accel: x=-480, y=140, z=18060 | Gyro: x=-415, y=271, z=-209
+Accel: x=-584, y=148, z=17924 | Gyro: x=-428, y=509, z=-174
+Accel: x=-576, y=116, z=17748 | Gyro: x=-455, y=296, z=-186
+
