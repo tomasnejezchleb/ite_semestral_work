@@ -1,0 +1,23 @@
+from machine import Pin, PWM
+import time
+
+# Nastavení pinů
+button = Pin(33, Pin.IN, Pin.PULL_UP)
+led1 = Pin(26, Pin.OUT)
+led2 = Pin(27, Pin.OUT)
+buzzer = PWM(Pin(25))
+
+# Frekvence bzučáku (např. 1000 Hz)
+buzzer.freq(1000)
+buzzer.duty(0)  # Bzučák vypnutý
+
+while True:
+    if button.value() == 0:  # Tlačítko stisknuto (aktivní LOW)
+        led1.value(1)
+        led2.value(1)
+        buzzer.duty(512)  # Zapnutí bzučáku (polovina výkonu)
+    else:
+        led1.value(0)
+        led2.value(0)
+        buzzer.duty(0)  # Vypnutí bzučáku
+    time.sleep(0.05)  # malá prodleva proti "chvění" tlačítka
