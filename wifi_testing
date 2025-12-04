@@ -1,0 +1,23 @@
+import network
+from time import sleep, ticks_ms, ticks_diff
+
+SSID = "not gonna tell"
+PASSWORD = "that's secret"
+
+def test_wifi():
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(SSID, PASSWORD)
+
+    timeout = 15  # sekund
+    start = ticks_ms()
+
+    while not wlan.isconnected():
+        if ticks_diff(ticks_ms(), start) > timeout * 1000:
+            print("Fail: WiFi connection fail")
+            return
+        sleep(0.5)
+
+    print("Wifi connection success:", wlan.ifconfig())
+
+test_wifi()
