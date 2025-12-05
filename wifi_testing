@@ -2,7 +2,7 @@ import network
 from time import sleep, ticks_ms, ticks_diff
 
 SSID = "not gonna tell"
-PASSWORD = "that's secret"
+PASSWORD = "that's a secret :)"
 
 def test_wifi():
     wlan = network.WLAN(network.STA_IF)
@@ -21,3 +21,11 @@ def test_wifi():
     print("Wifi connection success:", wlan.ifconfig())
 
 test_wifi()
+
+"""When code runs and the wifi is unavailable, terminal writes "Fail: WiFi nepřipojeno". 
+When the hotspot is avalible, the output of the terminal is "Připojeno: ('10.31.220.124', '255.255.255.0', '10.31.220.81', '10.31.220.81')".
+
+Note: the program wifi_testing must be uploaded to the ESP32 first and then runned via terminal code "import wifi-testing" as
+the ESP will automatically prioritize file named main and run it instead of the wifi_testing.py
+"""
+
