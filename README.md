@@ -61,7 +61,7 @@ Measurements are taken at intervals of 0.1 seconds..
 
 
 For more details about the testing process, see  
-**[hardware_tests_report.md](https://github.com/<tomasnejezchleb>/ite_semestral_work/testing/hardware_tests_report.md)**.
+**[hardware_tests_report.md](https://github.com/tomasnejezchleb/ite_semestral_work/blob/testing/hardware_tests_report.md)**.
 
 
 
