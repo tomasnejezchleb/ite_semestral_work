@@ -60,7 +60,9 @@ Measurements are taken at intervals of 0.1 seconds..
 | button pressed when alarm on| alarm turns off |
 
 
-For more details about testing, see the **[hardware_tests_report.md](testing/hardware_tests_report.md)** file.
+For more details about the testing process, see  
+**[hardware_tests_report.md](https://github.com/<tomasnejezchleb>/ite_semestral_work/blob/testing/hardware_tests_report.md)**.
+
 
 
 
