@@ -80,5 +80,3 @@ For more details about the testing process, see
 - emergency messages will be sent via wifi to remote device
 
 
-Chceš, abych ti upravil kód pro lepší detekci a přidal např. **sekvenční rozpoznání pádu (reálnější algoritmus)**?  
-Napiš *„chci vylepšenou detekci“* a pošlu hotovou verzi. 🚀
