@@ -48,6 +48,9 @@ After the start:
 
 Measurements are taken at intervals of 0.1 seconds..
 
+![Code state diagram](https://github.com/tomasnejezchleb/ite_semestral_work/blob/pictures/state_diagram1.png)
+
+
 ---
 
 ## Testing done
