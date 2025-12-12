@@ -67,6 +67,7 @@ For more details about the testing process, see
 **[hardware_tests_report.md](https://github.com/tomasnejezchleb/ite_semestral_work/blob/testing/hardware_tests_report.md)**.
 
 +wifi test: 
+---
 ![wifi_test state diagram](https://github.com/tomasnejezchleb/ite_semestral_work/blob/pictures/state_diagram_wifi.png)
 **[wifi_testing](https://github.com/tomasnejezchleb/ite_semestral_work/blob/testing/wifi_testing)**
 
