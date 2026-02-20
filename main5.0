@@ -1,0 +1,144 @@
+from machine import Pin, PWM, lightsleep
+from time import sleep, ticks_ms, ticks_diff
+from MPU6050 import MPU6050
+import network
+import urequests
+import gc
+import machine
+
+# ================= ÚSPORA =================
+machine.freq(80000000)  # snížení CPU frekvence
+
+# ================= WIFI =================
+SSID = "cuky"
+PASSWORD = "tomas_335"
+NTFY_URL = "https://ntfy.sh/fall_detection_9fk3a8DQ"
+
+WIFI_TIMEOUT = 20
+MAX_RETRIES = 10
+RETRY_DELAY = 1
+WIFI_KEEP_ON = 10
+
+wlan = None
+
+# ================= HARDWARE =================
+mpu = MPU6050()
+rled = Pin(27, Pin.OUT)
+buzzer = PWM(Pin(25))
+buzzer.duty(0)
+# po inicializaci MPU
+# Nastav MPU do sleep mode po inicializaci
+mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x40')  # PWR_MGMT_1 = sleep
+
+# ================= STAVY =================
+alarm_active = False
+notification_sent = False
+notification_timer = 0  # čekání před odesláním HTTP
+wifi_timer = 0
+cancel_requested = False  # flag místo sleep() v IRQ
+
+# ================= IRQ =================
+def irq_handler(pin):
+    global cancel_requested
+    cancel_requested = True
+
+btn_cancel = Pin(33, Pin.IN, Pin.PULL_UP)
+btn_cancel.irq(trigger=Pin.IRQ_FALLING, handler=irq_handler)
+
+# ================= WIFI FUNKCE =================
+def connect_wifi(timeout_s=WIFI_TIMEOUT):
+    global wlan
+    if wlan is None:
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+    if not wlan.isconnected():
+        wlan.connect(SSID, PASSWORD)
+        t0 = ticks_ms()
+        while not wlan.isconnected():
+            if ticks_diff(ticks_ms(), t0) > timeout_s*1000:
+                return None
+            sleep(0.2)  # krátké čekání
+    return wlan
+
+def disconnect_wifi():
+    global wlan
+    if wlan:
+        wlan.disconnect()
+        wlan.active(False)
+        wlan = None
+
+def send_ntfy(title="FALL", message="Detekován pád!"):
+    gc.collect()
+    wlan_obj = connect_wifi()
+    if not wlan_obj:
+        return False
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            headers = {"Title": title, "Priority": "5"}
+            response = urequests.post(NTFY_URL, data=message, headers=headers)
+            response.close()
+            return True
+        except:
+            sleep(RETRY_DELAY)
+    return False
+
+# ================= HARDWARE =================
+mpu = MPU6050()
+rled = Pin(27, Pin.OUT)
+buzzer = PWM(Pin(25))
+buzzer.duty(0)
+
+# Nastav MPU do sleep mode po inicializaci
+mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x40')  # PWR_MGMT_1 = sleep
+
+# ================= MAIN LOOP =================
+try:
+    while True:
+        # ===== Cancel zpracování mimo IRQ =====
+        if cancel_requested:
+            cancel_requested = False
+            if alarm_active:
+                alarm_active = False
+                rled.off()
+                buzzer.duty(0)
+                notification_sent = False
+                notification_timer = 0
+                send_ntfy(title="FALL CANCELED", message="Alarm zrušen tlačítkem")
+
+        # ===== Probuzení MPU pro čtení =====
+        mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x00')  # wake
+        accel_data = mpu.read_accel_data(g=True)
+        gyro_data = mpu.read_gyro_data()
+        mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x40')  # sleep
+
+        gx, gy, gz = abs(gyro_data['x']), abs(gyro_data['y']), abs(gyro_data['z'])
+        g_force = (accel_data['x']**2 + accel_data['y']**2 + accel_data['z']**2)**0.5
+        rotation = max(gx, gy, gz)
+
+        # ===== Detekce pádu =====
+        if not alarm_active:
+            if g_force > 1.2:
+                alarm_active = True
+                rled.on()
+                buzzer.duty(200)
+                notification_timer = 0
+                notification_sent = False
+        else:
+            rled.on()
+            buzzer.duty(200)
+
+        # ===== Odeslání notifikace =====
+        if alarm_active and not notification_sent:
+            notification_timer += 0.2
+            if notification_timer >= 1.0:  # čekání 1s po aktivaci
+                if send_ntfy(title="Detekován pád"):
+                    notification_sent = True
+                # WiFi se vypne hned po odeslání
+                disconnect_wifi()
+
+        # ===== Úsporný režim =====
+        lightsleep(300)  # spánek 0.3s
+except KeyboardInterrupt:
+    rled.off()
+    buzzer.duty(0)
+    disconnect_wifi()
