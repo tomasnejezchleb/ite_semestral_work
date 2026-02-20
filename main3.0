@@ -1,0 +1,133 @@
+from machine import Pin, PWM, lightsleep
+import machine
+from time import sleep, ticks_ms, ticks_diff
+from MPU6050 import MPU6050
+import network
+import urequests
+import gc
+
+# snížení CPU frekvence pro úsporu (ale stabilní pro WiFi)
+machine.freq(80000000)
+
+# ================= WIFI =================
+SSID = "cuky"
+PASSWORD = "tomas_335"
+NTFY_URL = "https://ntfy.sh/fall_detection_9fk3a8DQ"
+
+WIFI_TIMEOUT = 20
+MAX_RETRIES = 10
+RETRY_DELAY = 1
+WIFI_KEEP_ON = 10  # doba držení WiFi po alarmu
+
+wlan = None  # globální WiFi objekt
+
+# ================= HARDWARE =================
+mpu = MPU6050()
+rled = Pin(27, Pin.OUT)
+buzzer = PWM(Pin(25))
+buzzer.duty(0)
+
+alarm_active = False
+wifi_timer = 0
+cancel_requested = False  # flag pro cancel tlačítka místo sleep() v IRQ
+
+# ================= IRQ =================
+def irq_handler(pin):
+    global cancel_requested
+    cancel_requested = True
+
+btn_cancel = Pin(33, Pin.IN, Pin.PULL_UP)
+btn_cancel.irq(trigger=Pin.IRQ_FALLING, handler=irq_handler)
+
+# ================= WIFI FUNKCE =================
+def connect_wifi(timeout_s=WIFI_TIMEOUT):
+    global wlan
+    if wlan is None:
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+    if not wlan.isconnected():
+        wlan.connect(SSID, PASSWORD)
+        t0 = ticks_ms()
+        while not wlan.isconnected():
+            if ticks_diff(ticks_ms(), t0) > timeout_s * 1000:
+                print("WiFi timeout")
+                return None
+            sleep(0.5)
+    print("WiFi připojeno:", wlan.ifconfig())
+    return wlan
+
+def disconnect_wifi():
+    global wlan
+    if wlan:
+        wlan.disconnect()
+        wlan.active(False)
+        wlan = None  # <<< DŮLEŽITÉ: aby connect_wifi() znovu inicializovalo
+        print("WiFi vypnuta")
+
+def send_ntfy(title="FALL", message="Detekován pád!"):
+    gc.collect()
+    wlan_obj = connect_wifi()
+    if not wlan_obj:
+        print("Nepodařilo se připojit WiFi")
+        return False
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            headers = {"Title": title, "Priority": "5"}
+            response = urequests.post(NTFY_URL, data=message, headers=headers)
+            response.close()
+            print(f"Notifikace odeslána ✓ (pokus {attempt})")
+            return True
+        except Exception as e:
+            print(f"Chyba odesílání (pokus {attempt}/{MAX_RETRIES}):", e)
+            sleep(RETRY_DELAY)
+    print("Nepodařilo se odeslat notifikaci po všech pokusech")
+    return False
+
+# ================= MAIN LOOP =================
+try:
+    while True:
+        # ===== cancel flag zpracovaný mimo IRQ =====
+        if cancel_requested:
+            cancel_requested = False
+            if alarm_active:
+                print("Alarm zrušen tlačítkem")
+                alarm_active = False
+                rled.off()
+                buzzer.duty(0)
+                wifi_timer = WIFI_KEEP_ON
+                send_ntfy(title="FALL CANCELED", message="Alarm zrušen tlačítkem")
+
+        # ===== čtení MPU =====
+        accel_data = mpu.read_accel_data(g=True)
+        gyro_data = mpu.read_gyro_data()
+        gx, gy, gz = abs(gyro_data['x']), abs(gyro_data['y']), abs(gyro_data['z'])
+        g_force = (accel_data['x']**2 + accel_data['y']**2 + accel_data['z']**2)**0.5
+        rotation = max(gx, gy, gz)
+
+        # ===== detekce pádu =====
+        if not alarm_active:
+            if g_force > 1.2:
+                alarm_active = True
+                print("⚠️ Alarm aktivován!")
+                rled.on()
+                buzzer.duty(200)  # menší duty = úspora
+                wifi_timer = WIFI_KEEP_ON
+                send_ntfy(title="Detekován pád", message=f"g_force={g_force:.2f} g")
+        else:
+            rled.on()
+            buzzer.duty(200)
+
+        # ===== správa WiFi po alarmu =====
+        if wifi_timer > 0:
+            wifi_timer -= 0.2
+            sleep(0.2)
+        else:
+            disconnect_wifi()
+            # úsporný režim pouze pokud WiFi vypnuta
+            lightsleep(200)
+
+except KeyboardInterrupt:
+    print("Ukončeno")
+    rled.off()
+    buzzer.duty(0)
+    disconnect_wifi()
