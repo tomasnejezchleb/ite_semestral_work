@@ -1,0 +1,102 @@
+from machine import Pin, PWM, I2C, deepsleep
+from MPU6050 import MPU6050
+import network
+import urequests
+import gc
+from time import sleep
+import machine
+
+machine.freq(160000000)  # snížení CPU frekvence
+
+# ================= HARDWARE =================
+i2c = I2C(0, scl=Pin(22), sda=Pin(21))
+mpu = MPU6050(i2c)
+rled = Pin(27, Pin.OUT)
+buzzer = PWM(Pin(25))
+buzzer.duty(0)
+btn_cancel = Pin(33, Pin.IN, Pin.PULL_UP)
+
+# MPU do sleep po inicializaci
+mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x40')
+
+# ================= WIFI =================
+SSID = "cuky"
+PASSWORD = "tomas_335"
+NTFY_URL = "https://ntfy.sh/fall_detection_9fk3a8DQ"
+
+# ================= STAVY =================
+alarm_active = False
+notification_sent = False
+
+# ================= FUNKCE =================
+def connect_wifi(timeout_s=10):
+    wlan = network.WLAN(network.STA_IF)
+    if not wlan.active():
+        wlan.active(True)
+        sleep(0.5)
+    if not wlan.isconnected():
+        wlan.connect(SSID, PASSWORD)
+        for _ in range(timeout_s*5):  # kontrola 0.2s interval
+            if wlan.isconnected():
+                break
+            sleep(0.2)
+    return wlan if wlan.isconnected() else None
+
+def disconnect_wifi(wlan):
+    if wlan:
+        wlan.disconnect()
+        wlan.active(False)
+
+def send_ntfy(title="FALL", message="Detekován pád!"):
+    gc.collect()
+    wlan = connect_wifi()
+    if wlan:
+        try:
+            urequests.post(NTFY_URL, data=message, headers={"Title": title, "Priority": "5"}).close()
+        finally:
+            disconnect_wifi(wlan)
+
+def check_cancel():
+    return not btn_cancel.value()  # LOW = stisknuto
+
+# ================= PARAMETRY =================
+G_THRESHOLD = 1.2
+
+# ================= Hlavní loop =================
+while True:
+    # MPU wake → měření → sleep
+    mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x00')
+    accel = mpu.read_accel_data(g=True)
+    mpu.i2c.writeto_mem(mpu.addr, 0x6B, b'\x40')
+    
+    g_force = (accel['x']**2 + accel['y']**2 + accel['z']**2)**0.5
+
+    # ===== Detekce pádu =====
+    if not alarm_active and g_force > G_THRESHOLD:
+        alarm_active = True
+        notification_sent = False
+        rled.on()
+        buzzer.duty(200)
+
+    # ===== Alarm stav =====
+    if alarm_active:
+        # blikání LED a bzučák (spam)
+        rled.on()
+        buzzer.duty(200)
+        # odeslání notifikace jen jednou
+        if not notification_sent:
+            send_ntfy(title="Detekován pád")
+            notification_sent = True
+
+        # Cancel
+        if check_cancel():
+            alarm_active = False
+            rled.off()
+            buzzer.duty(0)
+            send_ntfy(title="FALL CANCELED", message="Alarm zrušen tlačítkem")
+            # Po cancel → zpět do deep sleep
+            deepsleep(100)  # krátký restart
+
+    # ===== Deep sleep mezi měřeními =====
+    if not alarm_active:
+        deepsleep(200)  
