@@ -1,0 +1,78 @@
+import network
+import urequests
+from machine import Pin, I2C, deepsleep
+import time
+from esp32 import wake_on_ext0
+
+# --- Piny ---
+I2C_SDA = 21
+I2C_SCL = 22
+MPU_ADDR = 0x68
+INT_PIN = 32
+RLED_PIN = 27
+
+# --- Wi-Fi ---
+SSID = "cuky"
+PASSWORD = "tomas_335"
+NTFY_URL = "https://ntfy.sh/fall_detection_9fk3a8DQ"
+
+# --- Inicializace ---
+i2c = I2C(0, scl=Pin(I2C_SCL), sda=Pin(I2C_SDA))
+rled = Pin(RLED_PIN, Pin.OUT)
+rled.value(0)
+
+# --- MPU6050 registry ---
+PWR_MGMT_1 = 0x6B
+INT_ENABLE = 0x38
+MOT_THR = 0x1F
+MOT_DUR = 0x20
+INT_PIN_CFG = 0x37
+INT_STATUS = 0x3A
+
+# --- Probuzení MPU ---
+i2c.writeto_mem(MPU_ADDR, PWR_MGMT_1, bytes([0x00]))
+
+# --- Motion interrupt ---
+i2c.writeto_mem(MPU_ADDR, MOT_THR, bytes([10]))
+i2c.writeto_mem(MPU_ADDR, MOT_DUR, bytes([1]))
+i2c.writeto_mem(MPU_ADDR, INT_ENABLE, bytes([0x40]))  # motion interrupt
+i2c.writeto_mem(MPU_ADDR, INT_PIN_CFG, bytes([0x20])) # latch until clear
+
+# --- Kontrola probuzení ---
+print("ESP probuzeno, kontrola pohybu...")
+status = i2c.readfrom_mem(MPU_ADDR, INT_STATUS, 1)[0]
+if status & 0x40:
+    print("Pohyb detekován!")
+    rled.value(1)
+    time.sleep(5)
+    rled.value(0)
+
+    # --- Připojení k Wi-Fi ---
+    print("Připojuji se k Wi-Fi...")
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    if not wlan.isconnected():
+        wlan.connect(SSID, PASSWORD)
+        timeout = 10
+        while not wlan.isconnected() and timeout > 0:
+            time.sleep(1)
+            timeout -= 1
+
+    if wlan.isconnected():
+        print("Wi-Fi připojeno:", wlan.ifconfig())
+        try:
+            r = urequests.post(NTFY_URL, data="Fall detected!")
+            r.close()
+            print("Notifikace odeslána")
+        except Exception as e:
+            print("Chyba při odesílání notifikace:", e)
+    else:
+        print("Nepodařilo se připojit k Wi-Fi.")
+
+# --- Vyčistíme interrupt registr ---
+i2c.readfrom_mem(MPU_ADDR, INT_STATUS, 1)
+
+print("ESP jde do deep sleep a čeká na další pohyb...")
+ext_pin = Pin(INT_PIN, Pin.IN)
+wake_on_ext0(pin=ext_pin, level=Pin.WAKE_HIGH)
+deepsleep()
