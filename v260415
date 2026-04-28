@@ -41,8 +41,8 @@ i2c.writeto_mem(MPU_ADDR, 0x6B, bytes([0]))
 i2c.writeto_mem(MPU_ADDR, 0x6C, bytes([0b00000111]))  # gyro X,Y,Z vypnuto, ACC zapnut
 
 # --- Motion interrupt ---
-i2c.writeto_mem(MPU_ADDR, MOT_THR, bytes([2]))
-i2c.writeto_mem(MPU_ADDR, MOT_DUR, bytes([3]))
+i2c.writeto_mem(MPU_ADDR, MOT_THR, bytes([1]))
+i2c.writeto_mem(MPU_ADDR, MOT_DUR, bytes([2]))
 i2c.writeto_mem(MPU_ADDR, INT_ENABLE, bytes([0x40]))  # motion interrupt
 i2c.writeto_mem(MPU_ADDR, INT_PIN_CFG, bytes([0x20])) # latch until clear
 
