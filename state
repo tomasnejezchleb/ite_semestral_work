@@ -1,0 +1,16 @@
+@startuml
+[*] --> Deep_sleep
+Deep_sleep --> Probuzení: wakeup skrze INT pin
+
+Probuzení --> sekundární_ověření_skrze_směrnici_vektoru 
+sekundární_ověření_skrze_směrnici_vektoru --> Alarm
+Alarm: červená LED a bzučák ON (4s)
+
+Alarm --> WiFi: SSID+heslo
+
+WiFi --> Notifikace: zpráva "Fall detected!"
+
+Alarm --> Deep_sleep: Nepodařilo se připojit k Wifi v časovém limitu (180 s)
+
+Notifikace --> Deep_sleep
+@enduml
