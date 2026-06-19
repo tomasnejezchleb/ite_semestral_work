@@ -4,7 +4,6 @@ from machine import Pin, I2C, deepsleep
 import time
 from esp32 import wake_on_ext0
 from machine import Pin, PWM
-import math
 
 # --- Piny ---
 I2C_SDA = 21
